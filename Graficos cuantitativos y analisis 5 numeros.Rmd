@@ -1,0 +1,330 @@
+---
+title: "Codigo para Graficos cuantitativos y analisis de 5 numeros"
+author: "Johan Castaño Bustamante"
+date: "2025-04-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+options(scipen = 999)
+```
+
+```{r}
+#Paquetes y cargar datos
+
+library(readr)
+library(writexl)
+library(dplyr)
+library(ggplot2)
+library(janitor)
+library(scales)
+Dataframe_aviones <- read.csv("C:/Users/colo1/Desktop/Universidad/Primer semestre 2025/Analisis de datos/Proyecto/Bitacora 1/Codigo para Graficos cuantitativos, analisis de 5 numeros/train.csv")
+
+
+```
+
+
+```{r}
+
+#Muestra de las 5 filas solicitadas
+
+muestra_filas<-head(Dataframe_aviones, 5)
+df_muestra<-as.data.frame(muestra_filas)
+write_xlsx(df_muestra, "df_muestra.xlsx")
+
+
+```
+
+
+
+
+```{r}
+#Filtacion de variables de interes
+df_vcuantitativas1 <- Dataframe_aviones %>% na.omit() %>% select(Age, Flight.Distance, Departure.Delay.in.Minutes, Arrival.Delay.in.Minutes, Gender) %>% clean_names()
+df_vcuantitativas<-as.data.frame(df_vcuantitativas1)
+
+df_vcuantitativas_estadisticos<- df_vcuantitativas %>% select(age, flight_distance, departure_delay_in_minutes, arrival_delay_in_minutes)
+
+```
+
+
+```{r}
+#Resumen 5 numeros y media
+estadisticas <- data.frame(
+  Mínimo = apply(df_vcuantitativas_estadisticos, 2, min, na.rm = TRUE),
+  Q1 = apply(df_vcuantitativas_estadisticos, 2, function(x) quantile(x, 0.25, na.rm = TRUE)),
+  Mediana = apply(df_vcuantitativas_estadisticos, 2, median, na.rm = TRUE),
+  Q3 = apply(df_vcuantitativas_estadisticos, 2, function(x) quantile(x, 0.75, na.rm = TRUE)),
+  Máximo = apply(df_vcuantitativas_estadisticos, 2, max, na.rm = TRUE),
+  Promedio = apply(df_vcuantitativas_estadisticos, 2, mean, na.rm = TRUE)
+)
+
+```
+
+
+```{r}
+
+# Theme para graficos
+my_theme <- theme_bw() +
+  theme(
+    panel.grid.major = element_line(color = "grey85"),
+    panel.grid.minor = element_blank(),
+    panel.border = element_rect(color = "grey70"),
+    axis.line = element_line(color = "black")
+  )
+```
+
+
+
+
+```{r}
+#Tamaño intervalos de edad
+bin_size <- 5
+
+# intervalos de edad
+df_population <- df_vcuantitativas %>%
+  mutate(age_group = cut(age,
+                         breaks = seq(0, max(age, na.rm = TRUE) + bin_size, by = bin_size),
+                         include.lowest = TRUE,
+                         right = FALSE))
+
+# Agrupar por grupos de edad y sexo, y contar las observaciones
+df_summary <- df_population %>%
+  group_by(age_group, gender) %>%
+  summarise(count = n(), .groups = "drop")
+
+# conteos para un sexo s
+df_summary <- df_summary %>%
+  mutate(count = ifelse(gender == "Male", -count, count))
+
+# Graficas
+piramide_poblacional<-ggplot(df_summary, aes(x = age_group, y = count, fill = gender)) +
+  geom_bar(stat = "identity", width = 0.8) +
+  coord_flip() +  # Invierte  ejes 
+  scale_y_continuous(labels = abs,    
+                     breaks = pretty(df_summary$count)) +
+  labs(x = "Grupo de Edad",
+       y = "Cantidad de Personas",
+       title = "") +
+  theme_minimal() +
+  scale_fill_manual(values = c("Male" = "cadetblue3", "Female" = "#FFF68F"))
+```
+
+
+
+```{r}
+
+#Tamaño de intervalos
+
+bin_size <- 250
+
+#breaks con formato numérico
+brks <- seq(0, max(df_vcuantitativas$flight_distance, na.rm = TRUE) + bin_size, by = bin_size)
+
+# etiquetas personalizadas
+labels <- paste0(format(head(brks, -1), scientific = FALSE), " - ", format(tail(brks, -1), scientific = FALSE))
+
+# cut() con las etiquetas personalizadas
+df_vcuantitativas_dis <- df_vcuantitativas %>%
+  mutate(distance_group = cut(flight_distance,
+                              breaks = brks,
+                              include.lowest = TRUE,
+                              right = FALSE,
+                              labels = labels))
+
+# invertavalos y cantidad de subgrupos
+df_vcuantitativas_dis_gr <- df_vcuantitativas_dis %>%
+  group_by(distance_group) %>%
+  summarise(n_count_dis = n())
+
+
+#Grafico
+distancia_recorrida<-ggplot(data = df_vcuantitativas_dis_gr, aes(x = distance_group, y = n_count_dis)) + 
+  geom_bar(stat = "identity", fill = "cadetblue2", color = "black") + 
+  geom_text(
+    aes(
+      label = n_count_dis, 
+      vjust = ifelse(n_count_dis < 3000, -0.5, 1.5) # Ajuste vertical 
+      
+      
+    ),
+    color="black",
+    size = 3
+  ) +
+  coord_cartesian(clip = 'off') +
+  labs(
+    title = "Distancia recorrida en millas náuticas por persona",
+    x = "Distancia recorrida en millas náuticas",
+    y = "Cantidad de personas"
+  ) +
+  theme(
+    plot.title = element_text(size = 10),
+    plot.margin = margin(t = 15, r = 5, b = 5, l = 5, unit = "pt")
+  ) +
+  my_theme+
+   theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  
+  )
+
+```
+
+
+
+```{r}
+#  0 o mayor a 1 minuto
+df_vcuantitativas_filtrada <- df_vcuantitativas %>%
+  filter(departure_delay_in_minutes >= 0)  
+
+# intervalos y límite
+bin_size_rs <- 10
+limite_max <- 180
+
+# cortes desde 1 hasta 210
+brks_rs <- seq(1, limite_max, by = bin_size_rs)
+
+#  punto de cierre para el último intervalo 
+brks_rs <- c(brks_rs, limite_max + 1)  
+
+# etiquetas 
+labels_rs <- paste0(head(brks_rs, -1), " - ", tail(brks_rs, -1) - 1)
+
+#subgrupo para los valores 0
+df_vcuantitativas_rs <- df_vcuantitativas_filtrada %>%
+  mutate(rs_group = ifelse(
+    departure_delay_in_minutes == 0, 
+    "0", 
+    ifelse(
+      departure_delay_in_minutes > limite_max, 
+      "180+", 
+      as.character(cut(
+        departure_delay_in_minutes,
+        breaks = brks_rs,
+        include.lowest = TRUE,
+        right = FALSE,
+        labels = labels_rs
+      ))
+    )
+  ))
+
+#  factores, asegurando que "0" aparezca primero
+niveles_ordenados <- c("0", labels_rs, "180+")
+df_vcuantitativas_rs$rs_group <- factor(df_vcuantitativas_rs$rs_group, levels = niveles_ordenados)
+
+# Agrupar y contar
+df_vcuantitativas_g_rs <- df_vcuantitativas_rs %>%
+  group_by(rs_group) %>%
+  summarise(n_count_rs = n())
+
+# Graficar
+retraso_salida_minutos<-ggplot(data = df_vcuantitativas_g_rs, aes(x = rs_group, y = n_count_rs)) +
+  geom_bar(stat = "identity", fill = "cadetblue2", color = "black") +
+  geom_text(
+    aes(
+      label = n_count_rs,
+      vjust = ifelse(n_count_rs < 3000, -0.5, 1.5)
+    ),
+    color = "black",
+    size = 3
+  ) +
+  coord_cartesian(clip = 'off') +
+  labs(
+    title = "",
+    x = "Retraso en Minutos",
+    y = "Cantidad de personas"
+  ) +
+  my_theme +  # Agregás mi theme
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  
+  )
+```
+
+
+
+
+
+
+```{r}
+#  de 0 o mayor a 1 minuto
+df_vcuantitativas_filtrada_l <- df_vcuantitativas %>%
+  filter(arrival_delay_in_minutes >= 0)  # Ahora permitimos 0
+
+#  intervalos y límite
+bin_size_rl <- 10
+limite_maxl <- 180
+
+# cortes desde 1 hasta 210
+brks_rl <- seq(1, limite_maxl, by = bin_size_rl)
+
+# ultimo punto de cierre para el último intervalo válido
+brks_rl <- c(brks_rl, limite_maxl + 1)  # para que el último intervalo sea cerrado correctamente
+
+# etiquetas 
+labels_rl <- paste0(head(brks_rl, -1), " - ", tail(brks_rl, -1) - 1)
+
+# subgrupo para los valores 0
+df_vcuantitativas_rl <- df_vcuantitativas_filtrada_l %>%
+  mutate(rl_group = ifelse(
+    arrival_delay_in_minutes == 0,  
+    "0", 
+    ifelse(
+      arrival_delay_in_minutes > limite_maxl, 
+      "180+", 
+      as.character(cut(
+        arrival_delay_in_minutes,
+        breaks = brks_rl,
+        include.lowest = TRUE,
+        right = FALSE,
+        labels = labels_rl
+      ))
+    )
+  ))
+
+# factores, asegurando que "0" aparezca primero
+niveles_ordenadosl <- c("0", labels_rl, "180+")
+df_vcuantitativas_rl$rl_group <- factor(df_vcuantitativas_rl$rl_group, levels = niveles_ordenadosl)
+
+# Agrupar y contar
+df_vcuantitativas_g_rl <- df_vcuantitativas_rl %>%
+  group_by(rl_group) %>%
+  summarise(n_count_rl = n())
+
+# Graficar
+retraso_salida_minutosl<-ggplot(data = df_vcuantitativas_g_rl, aes(x = rl_group, y = n_count_rl)) +
+  geom_bar(stat = "identity", fill = "cadetblue2", color = "black") +
+  geom_text(
+    aes(
+      label = n_count_rl,
+      vjust = ifelse(n_count_rl < 3000, -0.5, 1.5)
+    ),
+    color = "black",
+    size = 3
+  ) +
+  coord_cartesian(clip = 'off') +
+  labs(
+    title = "",
+    x = "Retraso en Minutos",
+    y = "Cantidad de personas"
+  ) +
+  my_theme +  # Agregás mi tema
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  
+  )
+```
+
+
+
+
+
+```{r}
+#Exportar bases
+ggsave("graficoPiramide.png", plot = piramide_poblacional, width = 8, height = 6, dpi = 300, units = "in")
+ggsave("graficoDistancia.png", plot = distancia_recorrida, width = 8, height = 6, dpi = 300, units = "in")
+ggsave("retraso_salida_minutos.png", plot = retraso_salida_minutos, width = 8, height = 6, dpi = 300, units = "in")
+ggsave("retraso_salida_minutosl.png", plot = retraso_salida_minutosl, width = 8, height = 6, dpi = 300, units = "in")
+write_xlsx(estadisticas, "estadisticas.xlsx")
+
+```
